@@ -31,6 +31,8 @@ async function merge4Images(
     fetchImageAsBuffer(imageUrl4),
   ]);
 
+  await initializeImageMagick();
+
   return await new Promise((resolve, reject) => {
     // Sử dụng ImageMagick để xử lý ảnh
     ImageMagick.read(buffer1, async (img1) => {
