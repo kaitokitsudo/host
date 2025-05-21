@@ -3,7 +3,7 @@
 // Tạo file với tên là main.ts
 
 import { Application, Router } from "https://deno.land/x/oak@v12.6.1/mod.ts";
-import { ImageMagick, IMagickImage, MagickFormat } from "https://deno.land/x/imagemagick_deno@0.0.24/mod.ts";
+import { ImageMagick, IMagickImage, MagickFormat, initializeImageMagick  } from "https://deno.land/x/imagemagick_deno@0.0.24/mod.ts";
 
 // Hàm để tải hình ảnh từ URL
 async function fetchImageAsBuffer(url: string): Promise<Uint8Array> {
@@ -174,7 +174,7 @@ router.get("/", (ctx) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Ghép 4 ảnh thành 1 ảnh hình vuông</title>
+      <title>Ghép 4 ảnh xx thành 1 ảnh hình vuông</title>
       <style>
         body {
           font-family: Arial, sans-serif;
