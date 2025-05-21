@@ -1,8 +1,19 @@
 // Mã TypeScript cho Deno Deploy để ghép 4 ảnh từ URL thành 1 ảnh hình vuông
+// Sử dụng thư viện ImageMagick cho Deno để tương thích với Deno Deploy
 // Tạo file với tên là main.ts
 
 import { Application, Router } from "https://deno.land/x/oak@v12.6.1/mod.ts";
-import { Canvas, Image, createCanvas, loadImage } from "https://deno.land/x/canvas@v1.4.1/mod.ts";
+import { ImageMagick, IMagickImage, MagickFormat } from "https://deno.land/x/imagemagick_deno@0.0.24/mod.ts";
+
+// Hàm để tải hình ảnh từ URL
+async function fetchImageAsBuffer(url: string): Promise<Uint8Array> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Không thể tải hình ảnh từ ${url}: ${response.status} ${response.statusText}`);
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  return new Uint8Array(arrayBuffer);
+}
 
 // Hàm chính để ghép 4 ảnh thành 1 ảnh vuông
 async function merge4Images(
@@ -12,48 +23,100 @@ async function merge4Images(
   imageUrl4: string,
   spacing: number = 0 // Khoảng cách giữa các ảnh (tùy chọn)
 ): Promise<Uint8Array> {
-  try {
-    // Tải 4 ảnh từ URL
-    const img1 = await loadImage(imageUrl1);
-    const img2 = await loadImage(imageUrl2);
-    const img3 = await loadImage(imageUrl3);
-    const img4 = await loadImage(imageUrl4);
+  // Tải 4 ảnh từ URL
+  const [buffer1, buffer2, buffer3, buffer4] = await Promise.all([
+    fetchImageAsBuffer(imageUrl1),
+    fetchImageAsBuffer(imageUrl2),
+    fetchImageAsBuffer(imageUrl3),
+    fetchImageAsBuffer(imageUrl4),
+  ]);
 
-    // Tìm kích thước lớn nhất trong các ảnh để đảm bảo các phần đều bằng nhau
-    const maxWidth = Math.max(img1.width(), img2.width(), img3.width(), img4.width());
-    const maxHeight = Math.max(img1.height(), img2.height(), img3.height(), img4.height());
+  return await new Promise((resolve, reject) => {
+    // Sử dụng ImageMagick để xử lý ảnh
+    ImageMagick.read(buffer1, async (img1) => {
+      try {
+        // Đọc các ảnh còn lại
+        const img2 = await new Promise<IMagickImage>((res) => {
+          ImageMagick.read(buffer2, (image) => res(image));
+        });
+        
+        const img3 = await new Promise<IMagickImage>((res) => {
+          ImageMagick.read(buffer3, (image) => res(image));
+        });
+        
+        const img4 = await new Promise<IMagickImage>((res) => {
+          ImageMagick.read(buffer4, (image) => res(image));
+        });
 
-    // Tính kích thước của canvas
-    const canvasWidth = maxWidth * 2 + spacing;
-    const canvasHeight = maxHeight * 2 + spacing;
+        // Lấy kích thước của các ảnh
+        const width1 = img1.width;
+        const height1 = img1.height;
+        const width2 = img2.width;
+        const height2 = img2.height;
+        const width3 = img3.width;
+        const height3 = img3.height;
+        const width4 = img4.width;
+        const height4 = img4.height;
 
-    // Tạo canvas với kích thước phù hợp
-    const canvas = createCanvas(canvasWidth, canvasHeight);
-    const ctx = canvas.getContext("2d");
+        // Tìm kích thước lớn nhất cho mỗi phần của grid
+        const maxWidth = Math.max(width1, width2, width3, width4);
+        const maxHeight = Math.max(height1, height2, height3, height4);
 
-    // Điền nền trắng (tùy chọn)
-    ctx.fillStyle = "white";
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+        // Thay đổi kích thước các ảnh để đồng nhất
+        await new Promise<void>((res) => {
+          img1.resize(maxWidth, maxHeight);
+          res();
+        });
+        
+        await new Promise<void>((res) => {
+          img2.resize(maxWidth, maxHeight);
+          res();
+        });
+        
+        await new Promise<void>((res) => {
+          img3.resize(maxWidth, maxHeight);
+          res();
+        });
+        
+        await new Promise<void>((res) => {
+          img4.resize(maxWidth, maxHeight);
+          res();
+        });
 
-    // Vẽ 4 ảnh lên canvas theo vị trí
-    // Ảnh 1: Góc trên bên trái
-    ctx.drawImage(img1, 0, 0, maxWidth, maxHeight);
-    
-    // Ảnh 2: Góc trên bên phải
-    ctx.drawImage(img2, maxWidth + spacing, 0, maxWidth, maxHeight);
-    
-    // Ảnh 3: Góc dưới bên trái
-    ctx.drawImage(img3, 0, maxHeight + spacing, maxWidth, maxHeight);
-    
-    // Ảnh 4: Góc dưới bên phải
-    ctx.drawImage(img4, maxWidth + spacing, maxHeight + spacing, maxWidth, maxHeight);
+        // Tạo một ảnh mới để chứa tất cả 4 ảnh
+        ImageMagick.new(maxWidth * 2 + spacing, maxHeight * 2 + spacing, async (resultImage) => {
+          try {
+            // Đặt nền trắng
+            resultImage.extent(maxWidth * 2 + spacing, maxHeight * 2 + spacing, "white");
 
-    // Trả về dữ liệu ảnh dưới dạng buffer
-    return canvas.toBuffer("image/png");
-  } catch (error) {
-    console.error("Lỗi khi ghép ảnh:", error);
-    throw error;
-  }
+            // Ghép 4 ảnh thành hình vuông
+            // Ảnh 1: Góc trên bên trái
+            resultImage.composite(img1, 0, 0);
+            
+            // Ảnh 2: Góc trên bên phải
+            resultImage.composite(img2, maxWidth + spacing, 0);
+            
+            // Ảnh 3: Góc dưới bên trái
+            resultImage.composite(img3, 0, maxHeight + spacing);
+            
+            // Ảnh 4: Góc dưới bên phải
+            resultImage.composite(img4, maxWidth + spacing, maxHeight + spacing);
+
+            // Chuyển đổi ảnh thành dạng buffer
+            resultImage.write(MagickFormat.Png, (data) => {
+              resolve(data);
+            });
+            
+          } catch (error) {
+            reject(error);
+          }
+        });
+        
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
 }
 
 // Tạo router và ứng dụng
